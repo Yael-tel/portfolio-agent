@@ -56,3 +56,29 @@ if uploaded_file is not None:
         st.success("No rule breaches found.")
 else:
     st.info("Upload your portfolio CSV to begin.")
+
+st.subheader("AI Insights")
+
+if uploaded_file is not None:
+    insights = []
+
+    # Cash detection
+    cash_exposure = df[df["sector"].str.contains("Cash", case=False, na=False)]["portfolio_percent"].sum()
+    if cash_exposure > 40:
+        insights.append(f"High cash exposure: {cash_exposure:.2f}%. Portfolio may be too conservative.")
+
+    # Tech exposure
+    tech_exposure = df[df["sector"].str.contains("Tech", case=False, na=False)]["portfolio_percent"].sum()
+    if tech_exposure > 25:
+        insights.append(f"High technology exposure: {tech_exposure:.2f}%.")
+
+    # Diversification
+    if len(df) < 5:
+        insights.append("Portfolio may be under-diversified.")
+
+    # Output
+    if insights:
+        for i in insights:
+            st.info(i)
+    else:
+        st.success("Portfolio looks balanced.")
