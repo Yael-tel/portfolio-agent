@@ -121,3 +121,47 @@ if uploaded_file is not None:
             st.info(action)
     else:
         st.success("No portfolio changes suggested right now.")
+
+st.subheader("Portfolio Score")
+
+score = 100
+
+if uploaded_file is not None:
+    
+    # Penalty: concentration
+    if "portfolio_percent" in df.columns:
+        max_position = df["portfolio_percent"].max()
+        if max_position > 20:
+            score -= 20
+
+    # Penalty: sector concentration
+    if "sector" in df.columns and "portfolio_percent" in df.columns:
+        sector_exposure = df.groupby("sector")["portfolio_percent"].sum()
+        if any(sector_exposure > 40):
+            score -= 15
+
+    # Penalty: USD exposure
+    if "country" in df.columns and "portfolio_percent" in df.columns:
+        usd_like = df[df["country"].astype(str).str.upper().isin(["US", "USA", "UNITED STATES"])]["portfolio_percent"].sum()
+        if usd_like > 80:
+            score -= 10
+
+    # Penalty: too much cash
+    cash_exposure = df[df["sector"].astype(str).str.contains("Cash", case=False, na=False)]["portfolio_percent"].sum()
+    if cash_exposure > 40:
+        score -= 15
+
+    # Penalty: low diversification
+    if len(df) < 5:
+        score -= 10
+
+    # Boundaries
+    score = max(0, score)
+
+    # Display
+    if score >= 80:
+        st.success(f"Portfolio Score: {score}/100 (Strong)")
+    elif score >= 60:
+        st.warning(f"Portfolio Score: {score}/100 (Moderate)")
+    else:
+        st.error(f"Portfolio Score: {score}/100 (Needs attention)")
