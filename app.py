@@ -171,15 +171,27 @@ import requests
 def get_fmp_analyst_recommendation(symbol):
     api_key = st.secrets["FMP_API_KEY"]
     url = f"https://financialmodelingprep.com/api/v3/analyst-stock-recommendations/{symbol}?apikey={api_key}"
-    r = requests.get(url, timeout=10)
-    if r.status_code == 200:
+
+    try:
+        r = requests.get(url, timeout=10)
+        if r.status_code != 200:
+            return {"error": f"HTTP {r.status_code}", "raw": r.text[:300]}
+
         data = r.json()
+
         if isinstance(data, list) and len(data) > 0:
             return data[0]
-    return None
+
+        return {"error": "No data returned", "raw": data}
+
+    except Exception as e:
+        return {"error": str(e), "raw": None}
 
 def classify_recommendation(analyst_row):
     if not analyst_row:
+        return "No data"
+
+    if isinstance(analyst_row, dict) and "error" in analyst_row:
         return "No data"
 
     buy = analyst_row.get("buy", 0) or 0
@@ -198,9 +210,8 @@ def classify_recommendation(analyst_row):
         return "Negative"
     return "Mixed"
 
-st.subheader("Market-Based Recommendations")
-
 if uploaded_file is not None:
+    found_any_market_data = False
 
     for _, row in df.iterrows():
         symbol = str(row.get("symbol", "")).strip()
@@ -213,11 +224,17 @@ if uploaded_file is not None:
         analyst = get_fmp_analyst_recommendation(symbol)
         sentiment = classify_recommendation(analyst)
 
+        if sentiment != "No data":
+            found_any_market_data = True
+
         if sentiment == "Negative":
-            st.warning(f"{asset_name} ({symbol}) → Negative analyst sentiment")
+            st.warning(f"{asset_name} ({symbol}) -> Negative analyst sentiment")
 
         elif sentiment == "Positive" and weight < 5:
-            st.info(f"{asset_name} ({symbol}) → Positive sentiment, small position")
+            st.info(f"{asset_name} ({symbol}) -> Positive sentiment, small position")
 
         elif sentiment == "Mixed":
-            st.write(f"{asset_name} ({symbol}) → Mixed analyst view")
+            st.write(f"{asset_name} ({symbol}) -> Mixed analyst view")
+
+    if not found_any_market_data:
+        st.info("No analyst data was returned for the current symbols. This usually means the API has no analyst coverage for these securities, or the symbols are ETFs/funds/Israeli instruments rather than covered stocks.")
