@@ -210,8 +210,12 @@ def classify_recommendation(analyst_row):
         return "Negative"
     return "Mixed"
 
+
+st.subheader("Market-Based Recommendations")
+
 if uploaded_file is not None:
     found_any_market_data = False
+    market_messages = []
 
     for _, row in df.iterrows():
         symbol = str(row.get("symbol", "")).strip()
@@ -228,13 +232,21 @@ if uploaded_file is not None:
             found_any_market_data = True
 
         if sentiment == "Negative":
-            st.warning(f"{asset_name} ({symbol}) -> Negative analyst sentiment")
+            market_messages.append(("warning", f"{asset_name} ({symbol}) -> Negative analyst sentiment"))
 
         elif sentiment == "Positive" and weight < 5:
-            st.info(f"{asset_name} ({symbol}) -> Positive sentiment, small position")
+            market_messages.append(("info", f"{asset_name} ({symbol}) -> Positive sentiment, small position"))
 
         elif sentiment == "Mixed":
-            st.write(f"{asset_name} ({symbol}) -> Mixed analyst view")
+            market_messages.append(("text", f"{asset_name} ({symbol}) -> Mixed analyst view"))
 
-    if not found_any_market_data:
+    if market_messages:
+        for level, message in market_messages:
+            if level == "warning":
+                st.warning(message)
+            elif level == "info":
+                st.info(message)
+            else:
+                st.write(message)
+    else:
         st.info("No analyst data was returned for the current symbols. This usually means the API has no analyst coverage for these securities, or the symbols are ETFs/funds/Israeli instruments rather than covered stocks.")
