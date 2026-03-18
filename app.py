@@ -250,3 +250,35 @@ if uploaded_file is not None:
                 st.write(message)
     else:
         st.info("No analyst data was returned for the current symbols. This usually means the API has no analyst coverage for these securities, or the symbols are ETFs/funds/Israeli instruments rather than covered stocks.")
+
+st.subheader("Macro & Market Insights")
+
+macro_insights = []
+
+if uploaded_file is not None:
+
+    # Cash
+    cash_exposure = df[df["sector"].astype(str).str.contains("Cash", case=False, na=False)]["portfolio_percent"].sum()
+    if cash_exposure > 40:
+        macro_insights.append("High cash exposure – benefits from high interest rates, but limits growth.")
+
+    # Technology
+    tech_exposure = df[df["sector"].astype(str).str.contains("Tech", case=False, na=False)]["portfolio_percent"].sum()
+    if tech_exposure > 20:
+        macro_insights.append("High exposure to tech – sensitive to interest rate changes.")
+
+    # US exposure
+    us_exposure = df[df["country"].astype(str).str.upper().isin(["US"])]["portfolio_percent"].sum()
+    if us_exposure > 30:
+        macro_insights.append("Significant US exposure – affected by Fed policy and USD movement.")
+
+    # Gold
+    gold_exposure = df[df["sector"].astype(str).str.contains("Gold", case=False, na=False)]["portfolio_percent"].sum()
+    if gold_exposure > 0:
+        macro_insights.append("Gold exposure – acts as hedge during geopolitical stress.")
+
+    if macro_insights:
+        for m in macro_insights:
+            st.info(m)
+    else:
+        st.success("No major macro signals detected.")
