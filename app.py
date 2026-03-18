@@ -82,3 +82,42 @@ if uploaded_file is not None:
             st.info(i)
     else:
         st.success("Portfolio looks balanced.")
+
+st.subheader("Suggested Actions")
+
+actions = []
+
+if uploaded_file is not None:
+    if "portfolio_percent" in df.columns:
+        max_position = df.loc[df["portfolio_percent"].idxmax()]
+        if max_position["portfolio_percent"] > 20:
+            actions.append(
+                f"Consider reducing {max_position['asset_name']} because it exceeds your 20% single-asset limit."
+            )
+
+    if "sector" in df.columns and "portfolio_percent" in df.columns:
+        sector_exposure = df.groupby("sector")["portfolio_percent"].sum()
+        high_sectors = sector_exposure[sector_exposure > 40]
+        for sector_name, exposure in high_sectors.items():
+            actions.append(
+                f"Consider reducing exposure to {sector_name}, which is {exposure:.2f}% of the portfolio."
+            )
+
+    if "country" in df.columns and "portfolio_percent" in df.columns:
+        usd_like = df[df["country"].astype(str).str.upper().isin(["US", "USA", "UNITED STATES"])]["portfolio_percent"].sum()
+        if usd_like > 80:
+            actions.append(
+                f"Consider lowering US/USD exposure. Current exposure is {usd_like:.2f}%."
+            )
+
+    cash_exposure = df[df["sector"].astype(str).str.contains("Cash", case=False, na=False)]["portfolio_percent"].sum()
+    if cash_exposure > 40:
+        actions.append(
+            f"Consider whether your cash allocation of {cash_exposure:.2f}% is intentional or temporary."
+        )
+
+    if actions:
+        for action in actions:
+            st.info(action)
+    else:
+        st.success("No portfolio changes suggested right now.")
