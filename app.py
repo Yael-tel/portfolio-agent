@@ -165,3 +165,59 @@ if uploaded_file is not None:
         st.warning(f"Portfolio Score: {score}/100 (Moderate)")
     else:
         st.error(f"Portfolio Score: {score}/100 (Needs attention)")
+
+import requests
+
+def get_fmp_analyst_recommendation(symbol):
+    api_key = st.secrets["FMP_API_KEY"]
+    url = f"https://financialmodelingprep.com/api/v3/analyst-stock-recommendations/{symbol}?apikey={api_key}"
+    r = requests.get(url, timeout=10)
+    if r.status_code == 200:
+        data = r.json()
+        if isinstance(data, list) and len(data) > 0:
+            return data[0]
+    return None
+
+def classify_recommendation(analyst_row):
+    if not analyst_row:
+        return "No data"
+
+    buy = analyst_row.get("buy", 0) or 0
+    hold = analyst_row.get("hold", 0) or 0
+    sell = analyst_row.get("sell", 0) or 0
+    total = buy + hold + sell
+
+    if total == 0:
+        return "No data"
+
+    score = (buy - sell) / total
+
+    if score > 0.3:
+        return "Positive"
+    elif score < -0.2:
+        return "Negative"
+    return "Mixed"
+
+st.subheader("Market-Based Recommendations")
+
+if uploaded_file is not None:
+
+    for _, row in df.iterrows():
+        symbol = str(row.get("symbol", "")).strip()
+        if not symbol:
+            continue
+
+        asset_name = row.get("asset_name", symbol)
+        weight = row.get("portfolio_percent", 0)
+
+        analyst = get_fmp_analyst_recommendation(symbol)
+        sentiment = classify_recommendation(analyst)
+
+        if sentiment == "Negative":
+            st.warning(f"{asset_name} ({symbol}) → Negative analyst sentiment")
+
+        elif sentiment == "Positive" and weight < 5:
+            st.info(f"{asset_name} ({symbol}) → Positive sentiment, small position")
+
+        elif sentiment == "Mixed":
+            st.write(f"{asset_name} ({symbol}) → Mixed analyst view")
