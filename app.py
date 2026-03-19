@@ -282,3 +282,143 @@ if uploaded_file is not None:
             st.info(m)
     else:
         st.success("No major macro signals detected.")
+
+def safe_number(x, default=0):
+    try:
+        if pd.isna(x):
+            return default
+        return float(x)
+    except Exception:
+        return default
+
+
+st.subheader("Daily P&L and Recommendations")
+
+if uploaded_file is not None:
+    work_df = df.copy()
+
+    # נוודא שהעמודות קיימות
+    if "portfolio_percent" not in work_df.columns:
+        work_df["portfolio_percent"] = 0
+
+    if "purchase_price" not in work_df.columns:
+        work_df["purchase_price"] = 0
+
+    # חישוב יומי משוער לפי אחוז שינוי
+    # כרגע אין לנו מחיר שוק חי לכל נייר, אז נשתמש בקירוב:
+    # אם בעתיד נוסיף מחיר חי - נחליף את החלק הזה
+    if "daily_change_percent" not in work_df.columns:
+        work_df["daily_change_percent"] = 0
+
+    if "current_value" not in work_df.columns:
+        # אם אין שווי נוכחי, נחשב הערכה גסה מתוך אחוזי תיק
+        total_portfolio_value_est = 100000
+        work_df["current_value"] = work_df["portfolio_percent"].apply(lambda x: safe_number(x) / 100 * total_portfolio_value_est)
+
+    work_df["daily_pnl"] = work_df["current_value"] * (work_df["daily_change_percent"].apply(safe_number) / 100)
+
+    # רווח/הפסד כולל משוער אם יש quantity + purchase_price
+    if "quantity" in work_df.columns:
+        work_df["estimated_cost"] = work_df["quantity"].apply(safe_number) * work_df["purchase_price"].apply(safe_number)
+        work_df["total_pnl"] = work_df["current_value"] - work_df["estimated_cost"]
+    else:
+        work_df["total_pnl"] = 0
+
+    # לוגיקת המלצות
+    def suggest_action(row, sector_exposure_map):
+        weight = safe_number(row.get("portfolio_percent", 0))
+        sector = str(row.get("sector", ""))
+        asset_name = str(row.get("asset_name", ""))
+        daily_change = safe_number(row.get("daily_change_percent", 0))
+
+        reasons = []
+        action = "Hold"
+        confidence = "Medium"
+
+        if weight > 20:
+            action = "Reduce"
+            confidence = "High"
+            reasons.append("Position exceeds your 20% single-asset limit")
+
+        sector_weight = sector_exposure_map.get(sector, 0)
+        if sector_weight > 40:
+            if action == "Hold":
+                action = "Reduce"
+            confidence = "High"
+            reasons.append("Sector exceeds your 40% sector limit")
+
+        if "Cash" in sector or "Money Market" in sector:
+            if weight > 20:
+                action = "Review"
+                confidence = "High"
+                reasons.append("Large cash allocation may reduce long-term growth")
+
+        if daily_change <= -3 and action == "Hold":
+            action = "Watch"
+            confidence = "Medium"
+            reasons.append("Large negative daily move")
+
+        if daily_change >= 2 and weight < 5 and action == "Hold":
+            action = "Add"
+            confidence = "Low"
+            reasons.append("Positive move in a small position")
+
+        if not reasons:
+            reasons.append("No major rule breach detected")
+
+        return pd.Series([action, confidence, "; ".join(reasons)])
+
+    sector_exposure = work_df.groupby("sector", dropna=False)["portfolio_percent"].sum().to_dict()
+    work_df[["suggested_action", "confidence", "reason"]] = work_df.apply(
+        lambda row: suggest_action(row, sector_exposure), axis=1
+    )
+
+    # סיכום יומי
+    total_daily_pnl = work_df["daily_pnl"].sum()
+    total_total_pnl = work_df["total_pnl"].sum()
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Estimated Daily P&L", f"{total_daily_pnl:,.0f}")
+    with col2:
+        st.metric("Estimated Total P&L", f"{total_total_pnl:,.0f}")
+
+    # תורמים עיקריים
+    st.subheader("Top Daily Movers")
+    movers = work_df[["asset_name", "symbol", "daily_change_percent", "daily_pnl"]].copy()
+    movers = movers.sort_values("daily_pnl", ascending=False)
+    st.dataframe(movers.head(5), use_container_width=True)
+
+    st.subheader("Daily Recommendations")
+    recommendations = work_df[["asset_name", "symbol", "portfolio_percent", "suggested_action", "confidence", "reason"]].copy()
+    recommendations = recommendations.sort_values(["suggested_action", "portfolio_percent"], ascending=[True, False])
+    st.dataframe(recommendations, use_container_width=True)
+
+    # תובנות יומיות
+    st.subheader("Daily Insights")
+
+    insights = []
+
+    max_weight = work_df["portfolio_percent"].apply(safe_number).max()
+    if max_weight > 20:
+        largest = work_df.loc[work_df["portfolio_percent"].apply(safe_number).idxmax()]
+        insights.append(f"Largest position is {largest['asset_name']} at {safe_number(largest['portfolio_percent']):.2f}% — above your limit.")
+
+    cash_exposure = work_df[work_df["sector"].astype(str).str.contains("Cash|Money Market", case=False, na=False)]["portfolio_percent"].apply(safe_number).sum()
+    if cash_exposure > 40:
+        insights.append(f"Cash exposure is {cash_exposure:.2f}% — portfolio is very defensive.")
+
+    tech_exposure = work_df[work_df["sector"].astype(str).str.contains("Tech", case=False, na=False)]["portfolio_percent"].apply(safe_number).sum()
+    if tech_exposure > 20:
+        insights.append(f"Technology exposure is {tech_exposure:.2f}% — portfolio is sensitive to growth and interest-rate moves.")
+
+    if total_daily_pnl < 0:
+        insights.append("Portfolio is estimated to be down on the day.")
+    elif total_daily_pnl > 0:
+        insights.append("Portfolio is estimated to be up on the day.")
+
+    if insights:
+        for item in insights:
+            st.info(item)
+    else:
+        st.success("No unusual daily insights detected.")
