@@ -422,3 +422,107 @@ if uploaded_file is not None:
             st.info(item)
     else:
         st.success("No unusual daily insights detected.")
+
+def get_alpha_global_quote(symbol):
+    api_key = st.secrets["ALPHA_VANTAGE_API_KEY"]
+    url = (
+        f"https://www.alphavantage.co/query?"
+        f"function=GLOBAL_QUOTE&symbol={symbol}&apikey={api_key}"
+    )
+
+    try:
+        r = requests.get(url, timeout=15)
+        if r.status_code != 200:
+            return None
+
+        data = r.json()
+        quote = data.get("Global Quote", {})
+
+        if not quote:
+            return None
+
+        price = quote.get("05. price")
+        previous_close = quote.get("08. previous close")
+        change = quote.get("09. change")
+        change_percent = quote.get("10. change percent")
+
+        return {
+            "current_price": float(price) if price else None,
+            "previous_close": float(previous_close) if previous_close else None,
+            "daily_change": float(change) if change else None,
+            "daily_change_percent": float(change_percent.replace("%", "")) if change_percent else None,
+        }
+    except Exception:
+        return None
+
+st.subheader("Real-Time Daily P&L")
+
+if uploaded_file is not None:
+    rt_df = df.copy()
+
+    # ניקוי בסיסי
+    if "quantity" not in rt_df.columns:
+        rt_df["quantity"] = 0
+
+    if "purchase_price" not in rt_df.columns:
+        rt_df["purchase_price"] = 0
+
+    rt_df["quantity"] = pd.to_numeric(rt_df["quantity"], errors="coerce").fillna(0)
+    rt_df["purchase_price"] = pd.to_numeric(rt_df["purchase_price"], errors="coerce").fillna(0)
+    rt_df["portfolio_percent"] = pd.to_numeric(rt_df.get("portfolio_percent", 0), errors="coerce").fillna(0)
+
+    current_prices = []
+    previous_closes = []
+    daily_change_percents = []
+    daily_pnls = []
+    total_pnls = []
+
+    for _, row in rt_df.iterrows():
+        symbol = str(row.get("symbol", "")).strip()
+        qty = float(row.get("quantity", 0) or 0)
+        purchase_price = float(row.get("purchase_price", 0) or 0)
+
+        quote = get_alpha_global_quote(symbol) if symbol else None
+
+        if quote and quote["current_price"] is not None and quote["previous_close"] is not None:
+            current_price = quote["current_price"]
+            previous_close = quote["previous_close"]
+            daily_change_percent = quote["daily_change_percent"] if quote["daily_change_percent"] is not None else 0
+
+            daily_pnl = (current_price - previous_close) * qty
+            total_pnl = (current_price - purchase_price) * qty if purchase_price > 0 else 0
+        else:
+            current_price = None
+            previous_close = None
+            daily_change_percent = None
+            daily_pnl = None
+            total_pnl = None
+
+        current_prices.append(current_price)
+        previous_closes.append(previous_close)
+        daily_change_percents.append(daily_change_percent)
+        daily_pnls.append(daily_pnl)
+        total_pnls.append(total_pnl)
+
+    rt_df["current_price"] = current_prices
+    rt_df["previous_close"] = previous_closes
+    rt_df["daily_change_percent_real"] = daily_change_percents
+    rt_df["daily_pnl_real"] = daily_pnls
+    rt_df["total_pnl_real"] = total_pnls
+
+    total_daily_pnl_real = pd.to_numeric(rt_df["daily_pnl_real"], errors="coerce").fillna(0).sum()
+    total_total_pnl_real = pd.to_numeric(rt_df["total_pnl_real"], errors="coerce").fillna(0).sum()
+
+    col1, col2 = st.columns(2)
+    with col1:
+        st.metric("Real Daily P&L", f"{total_daily_pnl_real:,.2f}")
+    with col2:
+        st.metric("Real Total P&L", f"{total_total_pnl_real:,.2f}")
+
+    st.subheader("Top Movers (Real Data)")
+    movers_real = rt_df[
+        ["asset_name", "symbol", "quantity", "current_price", "previous_close", "daily_change_percent_real", "daily_pnl_real"]
+    ].copy()
+
+    movers_real = movers_real.sort_values("daily_pnl_real", ascending=False, na_position="last")
+    st.dataframe(movers_real, use_container_width=True)
